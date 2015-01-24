@@ -1,0 +1,551 @@
+
+<!-- https://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html#speechreco-result -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Program Segments</title>
+	<!-- Include meta tag to ensure proper rendering and touch zooming -->
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<script src="speak.js-master/speakClient.js"></script>
+
+	<!-- Include bootstrap stylesheets -->
+	<!--<link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">-->
+	<link rel="stylesheet" href="bootstrap-3.3.2-dist/css/bootstrap.min.css">
+
+	<!-- JavaScript placed at the end of the document so the pages load faster -->
+	<!-- Optional: Include the jQuery library -->
+	<!--<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>-->
+	<script src="jquery-ui-1.11.2.custom/external/jquery/jquery.js"></script>
+
+	<!--<link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/themes/smoothness/jquery-ui.css" />-->
+	<link rel="stylesheet" href="jquery-ui-1.11.2.custom/jquery-ui.css" />
+	<!--<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js"></script>-->
+
+	<script src="jquery-ui-1.11.2.custom/jquery-ui.min.js"></script>
+
+	<!-- Optional: Incorporate the Bootstrap JavaScript plugins -->
+	<!--<script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>-->
+	<script src="bootstrap-3.3.2-dist/js/bootstrap.min.js"></script>
+
+	<style>
+		#info {
+			font-size: 20px;
+			text-align: center;
+		}
+
+		#speachTextBox {
+			font-size: 14px;
+			font-weight: bold;
+			border: 1px solid #ddd;
+			padding: 15px;
+			text-align: left;
+			min-height: 150px;
+		}
+
+		#interimSpan {
+			color: gray;
+		}
+
+		#finalSpan {
+			color: black;
+			padding-right: 3px;
+		}
+
+		#startButton {
+			float: right;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container-fluid jumbotron text-center">
+		<h1>VoiceChat: chat with your voice</h1>
+	</div>
+	<div class="container">
+		<div class="row">
+			<div class="col-sm-12">
+				<form role="form">
+					<div class="form-group">
+						<label for="user">Your username: </label>
+						<input type="text" class="form-control" id="user"/>
+						<input type="hidden" id="oldlastline"/>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div class="row">
+			<div class="col-sm-12">
+				<form role="form">
+					<div class="form-group">
+						<label for="history">History:</label>
+						<textarea id="history" class="form-control" rows="5" readonly="readonly"></textarea>
+					</div>
+				</form>
+			</div>
+		</div>
+
+		<div id="speachdata">
+			<div id="audio">
+			</div>
+		</div>
+
+		<div class="row">
+			<div class="col-sm-10">
+				<div id="info" class="row">
+					<p id="info_start">Click on the microphone icon and begin speaking for as long as you like.</p>
+					<p id="info_speak_now" style="display:none">Speak now.</p>
+					<p id="info_no_speech" style="display:none">No speech was detected. You may need to adjust your <a href="//support.google.com/chrome/bin/answer.py?hl=en&amp;answer=1407892">microphone settings</a>.</p>
+					<p id="info_no_microphone" style="display:none">No microphone was found. Ensure that a microphone is installed and that <a href="//support.google.com/chrome/bin/answer.py?hl=en&amp;answer=1407892"> microphone settings</a> are configured correctly.</p>
+					<p id="info_allow" style="display:none">Click the "Allow" button above to enable your microphone.</p>
+					<p id="info_denied" style="display:none">Permission to use microphone was denied.</p>
+					<p id="info_blocked" style="display:none">Permission to use microphone is blocked. To change, go to chrome://settings/contentExceptions#media-stream</p>
+					<p id="info_upgrade" style="display:none">Web Speech API is not supported by this browser. Upgrade to <a href="//www.google.com/chrome">Chrome</a> version 25 or later.</p>
+				</div>
+			</div>
+			<!--
+			<div class="col-sm-2">
+				<div id="divStartButton" class="row">
+					<button id="startButton"><img alt="Start" id="startImg" src="mic.gif"></button>
+				</div>
+			</div>
+			-->
+		</div>
+
+		<div class="container">
+			<div id="speachTextBox" class="form-group">
+				<button id="startButton"><img alt="Start" id="startImg" src="mic.gif"></button>
+				<span id="finalSpan"></span>
+				<span id="interimSpan"></span>
+			</div>
+		</div>
+	</div>
+
+	<script type="text/javascript">
+		var isRecognizing = false;
+		var finalTranscript = '';
+		var ignoreOnEnd;
+		var recognition;
+		var startRecognition;
+
+		$(function()
+		{
+			$("#oldlastline").val("");
+       		readMsgsSetHistoryAndSpeak();
+			window.setInterval("readMsgsSetHistoryAndSpeak()", 5000);
+			// setTimeout("readMsgsSetHistoryAndSpeak()", 5000);
+			speak('Welcome!');
+
+			recognition = getRecognition ();
+
+			if (recognition == null)
+			{
+				$("#startButton").css("visibility", 'hidden');
+				showInfo('info_upgrade');
+			}
+			else
+			{
+				$("#startButton").click(function(event) { startButton(event); });
+
+				$("#startButton").css("display", 'inline-block');
+				showInfo('info_start');
+
+				console.log("starting.....");
+
+				// var recognition = new webkitSpeechRecognition();
+				recognition.continuous = true;
+				recognition.interimResults = true;
+
+				recognition.onstart = function()
+				{
+					console.log("recognition.onstart");
+					isRecognizing = true;
+					showInfo('info_speak_now');
+					$("#startImg").attr("src", 'mic-animate.gif');
+				}
+
+				recognition.onresult = function(event)
+				{
+					// console.log("recognition.onresult");
+     				var interimTranscript = '';
+
+     				if (typeof(event.results) == 'undefined')
+					{
+       					recognition.onend = null;
+       					recognition.stop();
+
+						$("#startButton").css("visibility", 'hidden');
+						showInfo('info_upgrade');
+
+       					return;
+     				}
+
+     				for (var i = event.resultIndex; i < event.results.length; ++i)
+					{
+       					if (event.results[i].isFinal)
+						{
+	 						finalTranscript += event.results[i][0].transcript;
+       					}
+						else
+						{
+	 						interimTranscript += event.results[i][0].transcript;
+       					}
+     				}
+
+					/*
+					capitalize mette il primo carattere della frame in maiuscolo
+					linebreak trasforma due \n in un paragrafo html (<p>...</p>) e un \n in <br>
+
+     				finalTranscript = capitalize(finalTranscript);
+					console.log("finalTranscript 2: " + finalTranscript);
+					console.log("finalTranscript 3: " + linebreak(finalTranscript));
+
+					console.log("interimTranscript 1: " + interimTranscript);
+					console.log("interimTranscript 2: " + linebreak(interimTranscript));
+
+     				$("#finalSpan").html(linebreak(finalTranscript));
+     				$("#interimSpan").html(linebreak(interimTranscript));
+					*/
+					// console.log("finalTranscript: " + finalTranscript);
+					// console.log("interimTranscript: " + interimTranscript);
+     				$("#finalSpan").html(finalTranscript);
+     				$("#interimSpan").html(interimTranscript);
+     
+ 					if (finalTranscript == "")
+					{
+						return;
+					}
+					// console.log("finalTranscript: " + finalTranscript);
+
+     				//viene chiamata la pagina write.php?name=nomeconversazione con argomento post msg=Nomeutente:messaggio
+     
+     				var xmlhttp = new XMLHttpRequest();
+
+     				if (window.XMLHttpRequest)
+					{
+       					xmlhttp = new XMLHttpRequest();
+
+       					if (xmlhttp.overrideMimeType)
+						{
+	 						xmlhttp.overrideMimeType('text/xml');
+       					}
+     				}
+					else if (window.ActiveXObject)
+					{
+	   					// IE
+	   					try { xmlhttp = new ActiveXObject("Msxml2.XMLHTTP"); }
+	   					catch (e)
+						{
+	     					try { xmlhttp = new ActiveXObject("Microsoft.XMLHTTP"); }
+	     					catch (e) {}
+	   					}
+     				}
+     
+     				if (!xmlhttp)
+					{
+       					alert('Cannot create an XMLHTTP instance');
+     				}
+     
+     				var chatRoom = getUrlVars()["room"];
+     
+     				var address = "rooms/" + chatRoom;
+     
+     				xmlhttp.open("GET", address, true);
+     				xmlhttp.send();
+     
+     				xmlhttp.onreadystatechange = function()
+					{
+       					if (xmlhttp.readyState == XMLHttpRequest.DONE)
+						{
+	 						var respo = xmlhttp.responseText;
+
+	 						address = "write.php?name=" + chatRoom; 
+							// console.log("address: " + address);
+	
+ 							var sxmlhttp = new XMLHttpRequest();
+ 							if (window.XMLHttpRequest)
+							{
+   								sxmlhttp = new XMLHttpRequest();
+   								if (sxmlhttp.overrideMimeType)
+								{
+     								sxmlhttp.overrideMimeType('text/xml');
+   								}
+ 							}
+							else if (window.ActiveXObject)
+							{
+   								// IE
+   								try { sxmlhttp = new ActiveXObject("Msxml2.XMLHTTP"); }
+   								catch (e)
+								{
+     								try { sxmlhttp = new ActiveXObject("Microsoft.XMLHTTP"); }
+     								catch (e) {}
+   								}
+ 							}
+ 
+ 							if (!sxmlhttp)
+							{
+   								alert('Cannot create an XMLHTTP instance');
+ 							}
+ 
+ 							var user = $("#user").val();
+ 							var data = new FormData();
+ 							data.append('msg', respo + "\n" + user + ": " + finalTranscript);  
+	 						// console.log("msg: " + respo + "\n" + user + ": " + finalTranscript);
+ 
+ 							sxmlhttp.open("POST", address, true);
+ 							if (finalTranscript != "")
+								sxmlhttp.send(data);
+     
+     						sxmlhttp.onreadystatechange = function()
+							{
+       							var milliseconds = 1000;
+       							var start = new Date().getTime();
+       							for (var i = 0; i < 1e7; i++)
+								{
+	 								if ((new Date().getTime() - start) > milliseconds)
+									{
+	   									break;
+	 								}
+       							}
+       
+       							$("#finalSpan").html("");
+       							$("#interimSpan").html("");
+       							interimTranscript = "";
+       							finalTranscript = "";
+       							readMsgsSetHistoryAndSpeak();
+     						}
+   						}
+   					}
+				}
+
+				recognition.onerror = function(event)
+				{
+					console.log("recognition.onerror", event);
+					if (event.error == 'no-speech')
+					{
+						$("#startImg").attr("src", 'mic.gif');
+						showInfo('info_no_speech');
+						ignoreOnEnd = true;
+					}
+					else if (event.error == 'audio-capture')
+					{
+						$("#startImg").attr("src", 'mic.gif');
+						showInfo('info_no_microphone');
+						ignoreOnEnd = true;
+					}
+					else if (event.error == 'not-allowed')
+					{
+						if (event.timeStamp - startRecognition < 100)
+						{
+							showInfo('info_blocked');
+						}
+						else
+						{
+							showInfo('info_denied');
+						}
+						ignoreOnEnd = true;
+					}
+				}
+
+				recognition.onend = function()
+				{
+					console.log("recognition.onend");
+					isRecognizing = false;
+
+					if (ignoreOnEnd)
+					{
+						return;
+					}
+					$("#startImg").attr("src", 'mic.gif');
+					if (!finalTranscript)
+					{
+						showInfo('info_start');
+
+						return;
+					}
+
+					showInfo('');
+				}
+			}
+		});
+
+		function startButton(event)
+		{
+			console.log("startButton");
+			if (isRecognizing) {
+				recognition.stop();
+
+				return;
+			}
+			finalTranscript = '';
+			recognition.lang = "en-US";
+			// recognition.lang = "it-IT";
+			recognition.start();
+			ignoreOnEnd = false;
+       		$("#finalSpan").html("");
+       		$("#interimSpan").html("");
+			$("#startImg").attr("src", 'mic-slash.gif');
+			showInfo('info_allow');
+			// showButtons('none');
+			startRecognition = event.timeStamp;
+		}
+
+		function showInfo(s)
+		{
+			if (s)
+			{
+				$("p", "#info").css("display", 'none');
+				$("#" + s, "#info").css("display", 'inline');
+
+				$("#info").css("visibility", 'visible');
+			}
+			else
+			{
+				$("#info").css("visibility", 'hidden');
+			}
+		}
+ 
+		function readMsgsSetHistoryAndSpeak()
+		{
+			var xmlhttp = new XMLHttpRequest();
+			if (window.XMLHttpRequest)
+			{
+				xmlhttp = new XMLHttpRequest();
+				if (xmlhttp.overrideMimeType)
+				{
+					xmlhttp.overrideMimeType('text/xml');
+				}
+			}
+			else if (window.ActiveXObject)
+			{
+				// IE
+				try { xmlhttp = new ActiveXObject("Msxml2.XMLHTTP"); }
+				catch (e)
+				{
+					try { xmlhttp = new ActiveXObject("Microsoft.XMLHTTP"); }
+					catch (e) {}
+				}
+			}
+      
+			if (!xmlhttp)
+			{
+				alert('Cannot create an XMLHTTP instance');
+			}
+      
+     		var chatRoom = getUrlVars()["room"];
+      
+			var address = "rooms/" + chatRoom;
+			xmlhttp.open("GET", address, true);
+			xmlhttp.send();
+      
+			xmlhttp.onreadystatechange = function()
+			{
+				if (xmlhttp.readyState == XMLHttpRequest.DONE)
+				{
+					var respo = xmlhttp.responseText;
+					// var history = $("#history").val();
+					$("#history").html(respo);
+					$('#history').scrollTop ($('#history')[0].scrollHeight);
+					// $("#history").attr('readonly', "true");
+	  
+					var user = $("#user").val();
+					var oldlastline = $("#oldlastline").text();
+					var lastline = respo.substring(respo.lastIndexOf("\n")+1);
+	  
+					if ((user.length > 0) && (lastline.length > 0) && (lastline.substring(0, user.length) != user) && (lastline!=oldlastline))
+					{
+						// console.log("user last line: " + lastline.substring(0, user.length));
+						// console.log("lastline: " + lastline);
+						// console.log("oldlastline: " + oldlastline);
+
+						$("#oldlastline").text(lastline);
+						// console.log("oldlastline 1: " + $("#oldlastline").text());
+
+						// il metodo speak appartiene alla libreria SpeakJs
+						var amplitude="100";
+						var pitch="50";
+						var speed="150";
+						var workgap="5";
+						speak(lastline, { amplitude: amplitude, wordgap: workgap, pitch: pitch, speed: speed });
+
+						/*
+							Non utilizziamo il metodo di Google (SpeechSynthesisUtterance) perchè non funziona bene e non è supportato da altri browser
+
+							v ar *utterance = new SpeechSynthesisUtterance('Hello Treehouse');
+							window.speechSynthesis.speak(utterance);
+						*/
+					}
+				}
+			}
+		};
+
+		function getRecognition() 
+		{
+			if (typeof(speechRecognition) !== "undefined")
+			{
+				console.log("speechRecognition is supported");
+
+				return new speechRecognition();
+			}
+			else if (typeof(msSpeechRecognition) !== "undefined") 
+			{
+				console.log("msSpeechRecognition is supported");
+
+				return new msSpeechRecognition();
+			}
+			else if (typeof(mozSpeechRecognition) !== "undefined") 
+			{
+				console.log("mozSpeechRecognition is supported");
+
+				return new mozSpeechRecognition();
+			}
+			else if (typeof(webkitSpeechRecognition) !== "undefined") 
+			{
+				console.log("webkitSpeechRecognition is supported");
+
+				return new webkitSpeechRecognition();
+			}
+			else
+			{
+				console.log("NO speechRecognition is supported");
+
+				return null;
+			}
+		}
+
+		var two_line = /\n\n/g;
+		var one_line = /\n/g;
+		function linebreak(s)
+		{
+			return s.replace(two_line, '<p></p>').replace(one_line, '<br>');
+		}
+ 
+		var first_char = /\S/;
+		function capitalize(s)
+		{
+			return s.replace(first_char, function(m) { return m.toUpperCase(); });
+		}
+ 
+		function getUrlVars()
+		{
+			var vars = [], hash;
+			var hashes = window.location.href.slice(window.location.href.indexOf('?') + 1).split('&');
+			for(var i = 0; i < hashes.length; i++)
+			{
+				hash = hashes[i].split('=');
+				vars.push(hash[0]);
+				vars[hash[0]] = hash[1];
+			}
+
+			return vars;
+		}
+
+	</script>
+
+</body>
+
+</html>
+
